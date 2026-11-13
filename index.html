@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Piano Sheet Library</title>
+  <style>
+    :root {
+      --bg: #f5f3ef; --paper: #fffefa; --ink: #252525; --muted: #77736d;
+      --accent: #7657a5; --accent-light: #eee8f6; --line: #e7e1d9;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+    header { padding: 42px 22px 28px; text-align: center; }
+    header h1 { margin: 0 0 8px; font-family: Georgia, serif; font-size: clamp(2rem, 5vw, 3rem); font-weight: 500; }
+    header p { margin: 0; color: var(--muted); }
+    main { width: min(1100px, calc(100% - 32px)); margin: 0 auto 60px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 22px; }
+    input, select { border: 1px solid var(--line); background: var(--paper); border-radius: 12px; padding: 12px 14px; color: var(--ink); font: inherit; }
+    input { flex: 1 1 240px; min-width: 0; }
+    select { flex: 0 1 210px; }
+    .count { color: var(--muted); font-size: .9rem; margin: 0 0 14px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+    .song { cursor: pointer; text-align: left; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); color: inherit; transition: transform .15s, box-shadow .15s; }
+    .song:hover { transform: translateY(-3px); box-shadow: 0 10px 25px #30251b12; }
+    .cover { height: 190px; background: #eeeae4; display: grid; place-items: center; overflow: hidden; }
+    .cover img { width: 100%; height: 100%; object-fit: contain; }
+    .placeholder { color: var(--muted); font-size: .9rem; padding: 20px; text-align: center; }
+    .song-info { padding: 14px 16px 16px; }
+    .song-info h2 { margin: 0 0 9px; font-size: 1.05rem; font-weight: 650; }
+    .meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .85rem; }
+    .difficulty { color: var(--accent); background: var(--accent-light); padding: 5px 9px; border-radius: 999px; font-weight: 650; }
+    .empty { background: var(--paper); border: 1px dashed var(--line); padding: 36px; text-align: center; border-radius: 16px; color: var(--muted); }
+    .hidden { display: none !important; }
+    .viewer { position: fixed; inset: 0; z-index: 5; background: #17151bed; color: white; display: flex; flex-direction: column; }
+    .viewer-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; }
+    .viewer-top h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+    .viewer button { cursor: pointer; border: 1px solid #ffffff50; border-radius: 10px; background: #ffffff14; color: white; padding: 9px 13px; font: inherit; }
+    .viewer-actions { display: flex; align-items: center; gap: 8px; }
+    .page-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 8px 18px 18px; }
+    .page-stage img { max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
+    .page-stage img.zoomed { max-width: none; max-height: none; width: auto; height: auto; cursor: zoom-out; }
+    .page-nav { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 0 16px 18px; }
+    .page-nav span { min-width: 90px; text-align: center; color: #ddd; font-size: .9rem; }
+    .hint { color: var(--muted); font-size: .88rem; line-height: 1.5; margin-top: 28px; }
+    @media (max-width: 520px) { header { padding-top: 30px; } .cover { height: 160px; } .viewer-top { align-items: flex-start; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>My Piano Sheet Library</h1>
+    <p>Your music collection, organized by difficulty.</p>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Search songs..." aria-label="Search songs">
+      <select id="sort" aria-label="Sort songs">
+        <option value="easy">Easiest first</option>
+        <option value="hard">Hardest first</option>
+        <option value="az">Song name A–Z</option>
+        <option value="za">Song name Z–A</option>
+      </select>
+    </div>
+    <p class="count" id="count"></p>
+    <section class="grid" id="songs"></section>
+    <div class="empty hidden" id="empty">No songs found. Try a different search.</div>
+    <p class="hint">Tip: click a song to open its sheet music. Use the arrows to move between pages. Click the sheet itself to zoom in.</p>
+  </main>
+
+  <section class="viewer hidden" id="viewer" role="dialog" aria-modal="true" aria-label="Sheet music viewer">
+    <div class="viewer-top">
+      <h2 id="viewer-title"></h2>
+      <div class="viewer-actions">
+        <button id="close" type="button">✕ Close</button>
+      </div>
+    </div>
+    <div class="page-stage" id="stage"><img id="page-image" alt="Piano sheet music page"></div>
+    <div class="page-nav">
+      <button id="previous" type="button">← Previous</button>
+      <span id="page-number"></span>
+      <button id="next" type="button">Next →</button>
+    </div>
+  </section>
+
+  <script>
+    /*
+    ============================================================
+    ADD NEW PIANO SHEETS HERE
+    ============================================================
+    1. Put your image files in the folder named "sheets".
+    2. Copy one song example below and change the details.
+    3. For multiple pages, add more filenames inside the pages [ ].
+    4. Difficulty must be a number from 1 (easiest) to 10 (hardest).
+
+    Example:
+    {
+      title: "Your Song",
+      difficulty: 4,
+      pages: ["your-song-page-1.jpg", "your-song-page-2.jpg"]
+    },
+
+    Image file names are case-sensitive. Keep the quote marks.
+    ============================================================
+    */
+
+    const pianoSheets = [
+      {
+        title: "Für Elise",
+        difficulty: 4,
+        pages: ["fur-elise-page-1.jpg", "fur-elise-page-2.jpg"]
+      },
+      {
+        title: "Ode to Joy",
+        difficulty: 2,
+        pages: ["ode-to-joy-page-1.jpg"]
+      },
+      {
+        title: "Moonlight Sonata",
+        difficulty: 7,
+        pages: ["moonlight-sonata-page-1.jpg", "moonlight-sonata-page-2.jpg", "moonlight-sonata-page-3.jpg"]
+      }
+    ];
+
+    // You usually only need to edit the list above. The rest runs the website.
+    const imageFolder = "sheets/";
+    const songGrid = document.getElementById("songs");
+    const searchInput = document.getElementById("search");
+    const sortSelect = document.getElementById("sort");
+    const count = document.getElementById("count");
+    const empty = document.getElementById("empty");
+    const viewer = document.getElementById("viewer");
+    const viewerTitle = document.getElementById("viewer-title");
+    const pageImage = document.getElementById("page-image");
+    const pageNumber = document.getElementById("page-number");
+    const previous = document.getElementById("previous");
+    const next = document.getElementById("next");
+    let currentSong = null;
+    let currentPage = 0;
+
+    function safeDifficulty(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : 1;
+    }
+
+    function renderSongs() {
+      const term = searchInput.value.trim().toLowerCase();
+      const mode = sortSelect.value;
+      let list = pianoSheets.filter(song => song.title.toLowerCase().includes(term));
+
+      list.sort((a, b) => {
+        if (mode === "easy") return safeDifficulty(a.difficulty) - safeDifficulty(b.difficulty) || a.title.localeCompare(b.title);
+        if (mode === "hard") return safeDifficulty(b.difficulty) - safeDifficulty(a.difficulty) || a.title.localeCompare(b.title);
+        if (mode === "az") return a.title.localeCompare(b.title);
+        return b.title.localeCompare(a.title);
+      });
+
+      songGrid.innerHTML = "";
+      count.textContent = `${list.length} ${list.length === 1 ? "song" : "songs"} in your library`;
+      empty.classList.toggle("hidden", list.length !== 0);
+
+      list.forEach(song => {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "song";
+        const cover = document.createElement("div");
+        cover.className = "cover";
+        const img = document.createElement("img");
+        img.src = imageFolder + song.pages[0];
+        img.alt = `${song.title} sheet music preview`;
+        img.onerror = () => {
+          cover.innerHTML = `<div class="placeholder">Add<br><strong>${song.pages[0]}</strong><br>to the sheets folder</div>`;
+        };
+        cover.appendChild(img);
+
+        const info = document.createElement("div");
+        info.className = "song-info";
+        const title = document.createElement("h2");
+        title.textContent = song.title;
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const pages = document.createElement("span");
+        pages.textContent = `${song.pages.length} ${song.pages.length === 1 ? "page" : "pages"}`;
+        const difficulty = document.createElement("span");
+        difficulty.className = "difficulty";
+        difficulty.textContent = `Difficulty ${safeDifficulty(song.difficulty)}/10`;
+        meta.append(pages, difficulty);
+        info.append(title, meta);
+        card.append(cover, info);
+        card.addEventListener("click", () => openSong(song));
+        songGrid.appendChild(card);
+      });
+    }
+
+    function openSong(song) {
+      currentSong = song;
+      currentPage = 0;
+      viewer.classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+      showPage();
+    }
+
+    function showPage() {
+      viewerTitle.textContent = currentSong.title;
+      pageImage.classList.remove("zoomed");
+      pageImage.src = imageFolder + currentSong.pages[currentPage];
+      pageImage.alt = `${currentSong.title}, page ${currentPage + 1}`;
+      pageNumber.textContent = `Page ${currentPage + 1} of ${currentSong.pages.length}`;
+      previous.disabled = currentPage === 0;
+      next.disabled = currentPage === currentSong.pages.length - 1;
+      previous.style.opacity = previous.disabled ? ".4" : "1";
+      next.style.opacity = next.disabled ? ".4" : "1";
+    }
+
+    function closeViewer() {
+      viewer.classList.add("hidden");
+      document.body.style.overflow = "";
+      currentSong = null;
+    }
+
+    previous.addEventListener("click", () => { if (currentPage > 0) { currentPage--; showPage(); } });
+    next.addEventListener("click", () => { if (currentSong && currentPage < currentSong.pages.length - 1) { currentPage++; showPage(); } });
+    document.getElementById("close").addEventListener("click", closeViewer);
+    pageImage.addEventListener("click", () => pageImage.classList.toggle("zoomed"));
+    searchInput.addEventListener("input", renderSongs);
+    sortSelect.addEventListener("change", renderSongs);
+    document.addEventListener("keydown", event => {
+      if (viewer.classList.contains("hidden")) return;
+      if (event.key === "Escape") closeViewer();
+      if (event.key === "ArrowLeft" && currentPage > 0) { currentPage--; showPage(); }
+      if (event.key === "ArrowRight" && currentSong && currentPage < currentSong.pages.length - 1) { currentPage++; showPage(); }
+    });
+
+    renderSongs();
+  </script>
+</body>
+</html>
